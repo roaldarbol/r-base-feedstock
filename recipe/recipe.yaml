@@ -34,6 +34,10 @@ outputs:
       name: r-base
     build:
       script:
+        # Newer Xcode SDKs include CGImageAnimation.h unconditionally; its block
+        # type (CGImageSourceAnimationBlock) requires -fblocks in plain C files.
+        - if: osx
+          then: export CFLAGS="${CFLAGS} -fblocks"
         - if: not win
           then: bash $RECIPE_DIR/build-r-base.sh
         - if: win
