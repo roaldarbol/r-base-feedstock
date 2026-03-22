@@ -34,14 +34,12 @@ outputs:
       name: r-base
     build:
       script:
-        # Newer Xcode SDKs include CGImageAnimation.h which defines
-        # CGImageSourceAnimationBlock as a block type; -fblocks lets
-        # plain C files parse it.  This runs in the same assembled
-        # script as the main build call, so the export carries through.
+        # The gfortran dependency (gcc_impl_osx-*) activates after clang and
+        # overrides CC with GCC. Force CC/CXX back to the conda clang wrappers.
+        # Also add -fblocks so that newer Xcode SDK headers (CGImageAnimation.h)
+        # which use ObjC block types can be parsed in plain C compilation.
         - if: osx
-          then: echo "DIAG MACOSX_DEPLOYMENT_TARGET=${MACOSX_DEPLOYMENT_TARGET:-UNSET} CONDA_BUILD_SYSROOT=${CONDA_BUILD_SYSROOT:-UNSET}"
-        - if: osx
-          then: export CFLAGS="${CFLAGS:-} -fblocks"
+          then: export CC="${HOST}-clang" CXX="${HOST}-clang++" CFLAGS="${CFLAGS:-} -fblocks"
         - if: not win
           then: bash $RECIPE_DIR/build-r-base.sh
         - if: win
