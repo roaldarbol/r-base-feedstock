@@ -69,7 +69,8 @@ outputs:
       build:
         - if: unix
           then: gnuconfig
-        - ${{ stdlib('c') }}
+        - if: not osx
+          then: ${{ stdlib('c') }}
         - ${{ compiler('c') }}
         - ${{ compiler('cxx') }}
         - ${{ compiler('fortran') }}
