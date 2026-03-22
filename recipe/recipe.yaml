@@ -1,0 +1,310 @@
+context:
+  version: "4.5.3"
+
+package:
+  name: r-base-split
+  version: ${{ version }}
+
+source:
+  - url: https://cran.r-project.org/src/base/R-4/R-${{ version }}.tar.gz
+    sha256: aa5c1ed4293c7271ac513d654670356ac0e8a6ad5e42be014365d11150b5b8f2
+    patches:
+      - 0001-Darwin-Remove-unicode-elipsis-character-from-grDevic.patch
+      - 0002-Fix-trio-config.h-include-depth-issue.patch
+      - 0003-Win32-Do-not-link-static-libgcc.patch
+      - 0004-Win32-Prevent-conversion-of-R_ARCH-to-abs-Windows-pa.patch
+      - 0005-Darwin-Avoid-setting-DYLD_FALLBACK_LIBRARY_PATH.patch
+      - 0006-Linux-Do-not-modify-LD_LIBRARY_PATH.patch
+      - 0007-javareconf-Do-not-fail-on-compile-fail.patch
+      - 0008-Revert-part-of-9b818c6dc00143ff18775a4015a3f43b5196f.patch
+      - 0009-javareconf-macOS-Continue-to-allow-system-Java-lt-9-.patch
+      # 0010 intentionally skipped
+      - 0011-Check-for-changes-then-forcibly-mv-in-javareconf.in.patch
+      - 0012-Use-LAPACK_LDFLAGS-in-Rlapack_la_LIBADD.patch
+      - 0014-Use-conda-s-tzdata-package.patch
+      - 0015-Win32-Fix-COMPILED_BY-for-custom-GCC-pkgversion.patch
+      - 0018-Fix-path-to-TCL-TK.patch
+      - 0019-Disable-default-user-libraries.patch
+
+build:
+  number: 1
+  no_link:
+    - lib/R/doc/html/packages.html
+
+outputs:
+  - package:
+      name: r-base
+    build:
+      script: ${{ "bld-r-base.bat" if win else "build-r-base.sh" }}
+      rpaths:
+        - lib/R/lib/
+        - lib/
+      no_link:
+        # These files are modified by R CMD javareconf and can
+        # point to different Java implementations in each env.
+        - lib/R/etc/Makeconf
+        - lib/R/etc/ldpaths
+        - lib/R/etc/javaconf
+        - lib/R/etc/x64/Makeconf
+        - lib/R/etc/x64/ldpaths
+        - lib/R/etc/x64/javaconf
+      detect_binary_files_with_prefix: true
+      ignore_run_exports:
+        from_package:
+          - freetype
+      run_exports:
+        weak:
+          - ${{ pin_subpackage("r-base", lower_bound="x.x", upper_bound="x.x") }}
+        noarch:
+          - ${{ pin_subpackage("r-base", lower_bound="x.x", upper_bound="x.x") }}
+    requirements:
+      build:
+        - if: unix
+          then: gnuconfig
+        - ${{ stdlib('c') }}
+        - ${{ compiler('c') }}
+        - ${{ compiler('cxx') }}
+        - ${{ compiler('fortran') }}
+        - if: build_platform != target_platform
+          then: gfortran_impl_${{ build_platform }} ${{ fortran_compiler_version }}
+        - if: win
+          then: m2-pkg-config
+          else: pkg-config
+        - if: win
+          then:
+            - m2-base
+            - m2-diffutils
+            - m2-make
+            - m2-tar
+            - m2-unzip
+            - m2-texinfo-tex
+            - m2-texinfo
+            - m2-curl
+            - m2-p7zip
+            - miktex
+        - if: unix
+          then: texinfo
+        - openjdk
+        - if: unix
+          then: autoconf >=2.72
+        - if: win
+          then:
+            - m2-autoconf2.72
+            - m2-automake-wrapper
+            - create-forwarder-dll
+        - if: not win
+          then:
+            - automake
+            - make
+        # shellcheck is not yet built for linux-ppc64le
+        - if: unix and build_platform != "linux-ppc64le"
+          then: shellcheck
+        - if: not win
+          then: libcurl
+        # Cross-compilation: host deps also needed on build platform
+        - if: build_platform != target_platform
+          then:
+            - readline
+            - libcurl
+            - liblzma-devel
+            - libpng
+            - bzip2
+            - cairo
+            - libjpeg-turbo
+            - bwidget
+            - tktable
+            - expat
+            - pango
+            - freetype
+            - xorg-xproto
+            - xorg-kbproto
+            - xorg-xextproto
+            - xorg-renderproto
+            - icu
+            - pcre2
+            - tk
+            - zlib
+            - libtiff
+            - libblas
+            - liblapack
+            - libdeflate
+        - if: unix and build_platform != target_platform
+          then:
+            - libiconv
+            - glib
+        - if: osx
+          then: llvm-openmp
+        - if: linux
+          then: libgomp
+      host:
+        - if: osx
+          then: llvm-openmp
+        - if: linux
+          then: libgomp
+        - if: not win
+          then: readline
+        - libcurl
+        - liblzma-devel
+        - libpng
+        - bzip2
+        - cairo
+        - if: osx
+          then: gettext
+        - if: osx or win
+          then: fontconfig
+        - libjpeg-turbo
+        - libdeflate
+        - libiconv
+        - if: linux
+          then: libuuid
+        - if: unix
+          then: glib
+        - bwidget
+        - tktable
+        - if: not win
+          then:
+            - expat
+            - pango
+        # freetype needed for pkg-config
+        - freetype
+        - icu
+        - pcre2
+        - tk
+        - zlib
+        - gsl
+        - libtiff
+        - libblas
+        - liblapack
+        - tzdata
+        # sed path is recorded in R's shell wrapper
+        - if: linux
+          then:
+            - sed
+            - xorg-xorgproto
+            - xorg-libsm
+            - xorg-libice
+            - xorg-libx11
+            - xorg-libxt
+      run:
+        - _r-mutex 1.* anacondar_1
+        # Needed by R CMD javareconf
+        - if: not win
+          then: make
+        - if: linux or win
+          then:
+            - gcc_impl_${{ target_platform }} >=${{ c_compiler_version | default("0") }}
+            - gxx_impl_${{ target_platform }} >=${{ cxx_compiler_version | default("0") }}
+            - gfortran_impl_${{ target_platform }}
+        - if: osx
+          then:
+            - ${{ c_compiler }}_${{ target_platform }} >=${{ c_compiler_version | default("0") }}
+            - ${{ cxx_compiler }}_${{ target_platform }} >=${{ cxx_compiler_version | default("0") }}
+            - ${{ compiler('fortran') }}
+            - ${{ pin_compatible('llvm-openmp', upper_bound=None) }}
+        - curl
+        - if: linux
+          then:
+            - libuuid
+            - xorg-libxt
+            - sed
+        - bwidget
+        - tktable
+        - tk
+        # Update the lower bound with the version used in the internal tzdata
+        - tzdata >=2024a
+
+    tests:
+      - script:
+          - if: not win
+            then: R -h
+          - if: win
+            then: echo on && R -h
+          - R --version
+          # Ensure the shared library extension on macOS is also .so
+          - if: not win
+            then: R -e 'print(.Platform$dynlib.ext)' | grep -F -- ".so"
+          - if: win
+            then: R -e "print(.Platform$dynlib.ext)" | findstr "/C:%SHLIB_EXT%"
+          - Rscript --version
+          - if: not win
+            then: Rscript -e 'cat("ok\n")' | grep -xF ok
+          - if: win
+            then: Rscript -e "cat('ok\n')" | findstr /X "/C:ok"
+          - if: linux
+            then: xvfb-run Rscript -e "library('tcltk');quit(status=is.logical(tclRequire('Tktable')))"
+          - if: not linux
+            then: Rscript -e "library('tcltk');quit(status=is.logical(tclRequire('Tktable')))"
+          # Report on the optional features compiled into this build of R.
+          - R -e "capabilities()"
+          # Show third-party graphics software available
+          - R -e "grSoftVersion()"
+          # Show environment variables set by R wrapper
+          - if: not win
+            then: env | R -s -e "env <- Sys.getenv(names=TRUE); writeLines(setdiff(paste(names(env), env, sep='='), readLines(file('stdin'))))"
+          - if: win
+            then: set | R -s -e "env <- Sys.getenv(names=TRUE); writeLines(setdiff(paste(names(env), env, sep='='), readLines(file('stdin'))))"
+          # Show configure variables
+          - R CMD config --all
+          # SVG rendering (not Windows — winCairo.dll is missing)
+          - if: not win
+            then: Rscript test-svg.R
+          # Windows-only launchers
+          - if: win
+            then: open
+          - if: win
+            then: Rfe --help
+          - if: win
+            then: Rterm --help
+          - if: win
+            then: Rterm --version
+          # Prevent regression: https://github.com/conda-forge/r-base-feedstock/issues/50
+          - Rscript -e "stopifnot(capabilities('jpeg'), TRUE)"
+          - Rscript -e "stopifnot(capabilities('png'), TRUE)"
+          - if: win
+            then: if not exist %PREFIX%\Lib\R\bin\x64\R.lib exit 1
+          # Verify internal-tzcode works without warnings
+          - R -e "options(warn=2);Sys.time()"
+          # Check that tzdata version is at least 2024
+          - R -e "stopifnot(strtoi(substr(attr(OlsonNames(), 'Version'), 1, 4)) >= 2024)"
+          # Verify isolation from user library
+          - Rscript test-isolation.R
+        files:
+          recipe:
+            - test-svg.R
+            - test-isolation.R
+
+  - package:
+      name: cross-r-base
+    build:
+      skip: ${{ win }}
+      script: install-cross-activate.sh
+    requirements:
+      build:
+        # shellcheck is not yet built for linux-ppc64le
+        - if: build_platform != "linux-ppc64le"
+          then: shellcheck
+      run:
+        - ${{ pin_subpackage("r-base", exact=True) }}
+        - rsync
+    tests:
+      - script:
+          - test -f $PREFIX/etc/conda/activate.d/activate-cross-r-base.sh
+
+about:
+  homepage: http://www.r-project.org/
+  license: GPL-2.0-or-later
+  license_file: COPYING
+  description: >-
+    R is a free software environment for statistical computing and graphics.
+    This build isolates the conda environment from user-installed R packages
+    (~/.libPaths()), ensuring full reproducibility within conda environments.
+
+extra:
+  recipe-maintainers:
+    - conda-forge/r
+    - isuruf
+    - mbargull
+    - mingwandroid
+    - ocefpaf
+    - sodre
+    - xhochy
