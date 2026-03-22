@@ -24,7 +24,7 @@ jobs:
             runner: macos-14
             variant: osx_arm64
           - platform: osx-64
-            runner: macos-13
+            runner: macos-15-intel
             variant: osx_64
           - platform: linux-64
             runner: ubuntu-latest
