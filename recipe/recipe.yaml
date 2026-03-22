@@ -33,7 +33,11 @@ outputs:
   - package:
       name: r-base
     build:
-      script: ${{ "bld-r-base.bat" if win else "build-r-base.sh" }}
+      script:
+        - if: not win
+          then: bash $RECIPE_DIR/build-r-base.sh
+        - if: win
+          then: cmd /c %RECIPE_DIR%\bld-r-base.bat
       always_copy_files:
         # These files are modified by R CMD javareconf and can
         # point to different Java implementations in each env.
@@ -59,7 +63,8 @@ outputs:
       build:
         - if: unix
           then: gnuconfig
-        - ${{ stdlib('c') }}
+        - if: not osx
+          then: ${{ stdlib('c') }}
         - ${{ compiler('c') }}
         - ${{ compiler('cxx') }}
         - ${{ compiler('fortran') }}
@@ -275,7 +280,8 @@ outputs:
       name: cross-r-base
     build:
       skip: ${{ win }}
-      script: install-cross-activate.sh
+      script:
+        - bash $RECIPE_DIR/install-cross-activate.sh
     requirements:
       build:
         # shellcheck is not yet built for linux-ppc64le
