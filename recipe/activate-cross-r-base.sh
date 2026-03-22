@@ -1,8 +1,9 @@
 # shellcheck shell=sh
 
-if [ -z "${CONDA_BUILD:+x}" ]; then
-  echo "This package can only be used in conda-build"
-  exit 1
+# BUILD_PREFIX is set by both conda-build and rattler-build during build/test.
+# Outside of a build context this script is a no-op.
+if [ -z "${CONDA_BUILD:+x}" ] && [ -z "${BUILD_PREFIX:+x}" ]; then
+  return 0 2>/dev/null || exit 0
 fi
 
 # shellcheck disable=SC2154  # assume variables are set at this point
