@@ -1,7 +1,7 @@
 context:
   version: "4.5.3"
 
-package:
+recipe:
   name: r-base-split
   version: ${{ version }}
 
@@ -28,18 +28,13 @@ source:
 
 build:
   number: 1
-  no_link:
-    - lib/R/doc/html/packages.html
 
 outputs:
   - package:
       name: r-base
     build:
       script: ${{ "bld-r-base.bat" if win else "build-r-base.sh" }}
-      rpaths:
-        - lib/R/lib/
-        - lib/
-      no_link:
+      always_copy_files:
         # These files are modified by R CMD javareconf and can
         # point to different Java implementations in each env.
         - lib/R/etc/Makeconf
@@ -48,16 +43,19 @@ outputs:
         - lib/R/etc/x64/Makeconf
         - lib/R/etc/x64/ldpaths
         - lib/R/etc/x64/javaconf
-      detect_binary_files_with_prefix: true
+        # Prevent hard-linking of this shared HTML index
+        - lib/R/doc/html/packages.html
+      dynamic_linking:
+        rpaths:
+          - lib/R/lib/
+          - lib/
+    requirements:
       ignore_run_exports:
         from_package:
           - freetype
       run_exports:
         weak:
           - ${{ pin_subpackage("r-base", lower_bound="x.x", upper_bound="x.x") }}
-        noarch:
-          - ${{ pin_subpackage("r-base", lower_bound="x.x", upper_bound="x.x") }}
-    requirements:
       build:
         - if: unix
           then: gnuconfig
