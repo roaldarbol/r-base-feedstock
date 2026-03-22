@@ -34,10 +34,20 @@ outputs:
       name: r-base
     build:
       script:
-        # Newer Xcode SDKs include CGImageAnimation.h unconditionally; its block
-        # type (CGImageSourceAnimationBlock) requires -fblocks in plain C files.
         - if: osx
-          then: export CFLAGS="${CFLAGS} -fblocks"
+          then: |
+            # clang_osx-64 defaults to darwin13.4.0 (macOS 10.9); Xcode 16's
+            # linker hard-errors on targets below 10.13. Set the deployment
+            # target explicitly and scrub any stale -mmacosx-version-min that
+            # the conda clang activation script already injected into the flags.
+            if [ "$target_platform" = "osx-arm64" ]; then
+              export MACOSX_DEPLOYMENT_TARGET="11.0"
+            else
+              export MACOSX_DEPLOYMENT_TARGET="10.13"
+            fi
+            export CFLAGS="$(echo "${CFLAGS}" | sed 's/-mmacosx-version-min=[^ ]*//g') -fblocks"
+            export CPPFLAGS="$(echo "${CPPFLAGS}" | sed 's/-mmacosx-version-min=[^ ]*//g')"
+            export LDFLAGS="$(echo "${LDFLAGS}" | sed 's/-mmacosx-version-min=[^ ]*//g')"
         - if: not win
           then: bash $RECIPE_DIR/build-r-base.sh
         - if: win
