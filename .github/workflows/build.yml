@@ -1,0 +1,54 @@
+# Builds r-base for all supported platforms on every pull request
+# targeting the "isolated" branch. Does not upload — used to verify
+# the recipe builds correctly before merging.
+
+name: Build (PR check)
+
+on:
+  pull_request:
+    branches:
+      - isolated
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build (${{ matrix.target.platform }})
+    runs-on: ${{ matrix.target.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - platform: osx-arm64
+            runner: macos-14
+            variant: osx_arm64
+          - platform: osx-64
+            runner: macos-13
+            variant: osx_64
+          - platform: linux-64
+            runner: ubuntu-latest
+            variant: linux_64
+          - platform: linux-aarch64
+            runner: ubuntu-24.04-arm
+            variant: linux_aarch64
+          - platform: win-64
+            runner: windows-latest
+            variant: win_64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install rattler-build
+        uses: prefix-dev/rattler-build-action@v0
+        with:
+          rattler-build-version: latest
+
+      - name: Build
+        shell: bash
+        run: |
+          rattler-build build \
+            --recipe recipe/ \
+            -m recipe/variants/${{ matrix.target.variant }}.yaml \
+            --output-dir output/

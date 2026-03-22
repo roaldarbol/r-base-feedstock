@@ -1,30 +1,26 @@
 # Builds r-base for all supported platforms and uploads to the
-# "isolated-r" channel on prefix.dev.
+# "isolated-r" channel on prefix.dev using Trusted Publishers (OIDC).
 #
-# Required secret:  PREFIX_DEV_TOKEN
-#   A prefix.dev API token with write access to the "isolated-r" channel.
-#   Add it in: Settings → Secrets and variables → Actions → New repository secret
+# Setup (one-time):
+#   On prefix.dev, go to your channel → Settings → Trusted Publishers
+#   and add a GitHub publisher for this repo, workflow file
+#   "build-and-upload.yml", and branch "isolated".
 #
 # Triggered by:
-#   - Pushing a version tag:  git tag v4.5.3-1 && git push origin v4.5.3-1
-#   - Manual dispatch (with optional dry-run toggle)
+#   - Any push to the "isolated" branch (i.e. after a PR is merged)
+#   - Manual dispatch
 
 name: Build and upload
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches:
+      - isolated
   workflow_dispatch:
-    inputs:
-      dry_run:
-        description: 'Dry run — build but do not upload'
-        required: false
-        default: 'false'
-        type: choice
-        options:
-          - 'false'
-          - 'true'
+
+permissions:
+  contents: read
+  id-token: write  # required for Trusted Publishers OIDC
 
 jobs:
   build:
@@ -53,17 +49,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          ref: isolated
-
-      - name: Set up pixi
-        uses: prefix-dev/setup-pixi@v0.8.1
-        with:
-          pixi-version: latest
 
       - name: Install rattler-build
-        shell: bash
-        run: pixi global install rattler-build
+        uses: prefix-dev/rattler-build-action@v0
+        with:
+          rattler-build-version: latest
 
       - name: Build
         shell: bash
@@ -73,7 +63,7 @@ jobs:
             -m recipe/variants/${{ matrix.target.variant }}.yaml \
             --output-dir output/
 
-      - name: Upload artifacts
+      - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: conda-packages-${{ matrix.target.platform }}
@@ -84,34 +74,25 @@ jobs:
     name: Upload to prefix.dev
     needs: build
     runs-on: ubuntu-latest
-    if: >-
-      github.event_name == 'push' ||
-      (github.event_name == 'workflow_dispatch' && inputs.dry_run == 'false')
 
     steps:
-      - name: Download all artifacts
+      - name: Download all build artifacts
         uses: actions/download-artifact@v4
         with:
           pattern: conda-packages-*
           path: output/
           merge-multiple: true
 
-      - name: Set up pixi
-        uses: prefix-dev/setup-pixi@v0.8.1
-        with:
-          pixi-version: latest
-
       - name: Install rattler-build
-        run: pixi global install rattler-build
+        uses: prefix-dev/rattler-build-action@v0
+        with:
+          rattler-build-version: latest
 
-      - name: Upload packages
-        env:
-          PREFIX_DEV_TOKEN: ${{ secrets.PREFIX_DEV_TOKEN }}
+      - name: Upload packages (Trusted Publishers)
         run: |
-          find output/ -name "*.conda" -o -name "*.tar.bz2" | while read pkg; do
+          find output/ -name "*.conda" | while read pkg; do
             echo "Uploading: $pkg"
             rattler-build upload prefix \
               --channel isolated-r \
-              --api-key "$PREFIX_DEV_TOKEN" \
               "$pkg"
           done
