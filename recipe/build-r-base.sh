@@ -373,6 +373,11 @@ Mingw_w64_makefiles() {
     # .. I need to see if this can be repeated on other systems and reported upstream or investigated more, it is very rare and I don't think warrants holding things up.
     # echo "Running make check-all (up to 3 times, there is some flakiness in p-r-random-tests.R), this will take some time ..."
     # make check-all -j1 > make-check.log 2>&1 || make check-all -j1 > make-check.2.log 2>&1 || make check-all -j1 > make-check.3.log 2>&1
+    # imagedir copies doc/manual/*.pdf; without MiKTeX none are built so the
+    # glob fails. Create placeholder empty files so the copy succeeds.
+    for _html in "${SRC_DIR}/doc/manual"/*.html; do
+        touch "${_html%.html}.pdf"
+    done
     cd installer
     make R_PKGS_RECOMMENDED= imagedir
 

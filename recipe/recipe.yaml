@@ -39,7 +39,7 @@ outputs:
         # Also add -fblocks so that newer Xcode SDK headers (CGImageAnimation.h)
         # which use ObjC block types can be parsed in plain C compilation.
         - if: osx
-          then: export CC="${HOST}-clang" CXX="${HOST}-clang++" CFLAGS="${CFLAGS:-} -fblocks"
+          then: export CC="${HOST}-clang" CXX="${HOST}-clang++" CFLAGS="${CFLAGS:-} -fblocks" LDFLAGS="${LDFLAGS:-} -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}"
         - if: not win
           then: bash $RECIPE_DIR/build-r-base.sh
         - if: win
