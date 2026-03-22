@@ -1,0 +1,186 @@
+# Monitors conda-forge/r-base-feedstock main for recipe changes and
+# opens a PR (clean rebase) or an issue (conflicts) automatically.
+#
+# IMPORTANT: For the scheduled trigger to fire, "isolated" must be set
+# as the default branch of your fork (Settings → Branches → Default branch).
+# The workflow_dispatch trigger works from any branch.
+
+name: Sync with upstream
+
+on:
+  schedule:
+    - cron: '0 8 * * 1'  # Every Monday at 08:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout isolated branch
+        uses: actions/checkout@v4
+        with:
+          ref: isolated
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+
+      - name: Fetch upstream
+        run: |
+          git remote add upstream https://github.com/conda-forge/r-base-feedstock.git
+          git fetch upstream main
+
+      - name: Detect upstream recipe changes
+        id: detect
+        run: |
+          # Common ancestor between our isolated branch and upstream/main
+          BASE=$(git merge-base HEAD upstream/main)
+
+          # Count upstream commits since that ancestor that touch recipe/
+          COUNT=$(git log --oneline "$BASE..upstream/main" -- recipe/ | wc -l | tr -d ' ')
+          echo "count=$COUNT" >> "$GITHUB_OUTPUT"
+
+          if [ "$COUNT" -gt 0 ]; then
+            LOG=$(git log --oneline "$BASE..upstream/main" -- recipe/)
+            echo "upstream_sha=$(git rev-parse upstream/main)" >> "$GITHUB_OUTPUT"
+            # Multiline output
+            printf 'log<<LOGEOF\n%s\nLOGEOF\n' "$LOG" >> "$GITHUB_OUTPUT"
+            echo "Upstream has $COUNT new recipe commit(s):"
+            echo "$LOG"
+          else
+            echo "No upstream recipe changes since last sync. Nothing to do."
+          fi
+
+      - name: Check for existing open sync PR
+        if: steps.detect.outputs.count != '0'
+        id: existing
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR=$(gh pr list \
+                 --base isolated \
+                 --state open \
+                 --json number,headRefName \
+                 --jq '[.[] | select(.headRefName | startswith("sync/upstream"))] | first | .number // ""')
+          echo "pr=$PR" >> "$GITHUB_OUTPUT"
+          if [ -n "$PR" ]; then
+            echo "Sync PR #$PR already open — skipping."
+          fi
+
+      - name: Attempt rebase onto upstream/main
+        if: steps.detect.outputs.count != '0' && steps.existing.outputs.pr == ''
+        id: rebase
+        run: |
+          BRANCH="sync/upstream-$(date +%Y%m%d)"
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+
+          # Create branch from current isolated HEAD, then rebase onto upstream
+          git checkout -b "$BRANCH"
+          if git rebase upstream/main; then
+            echo "status=success" >> "$GITHUB_OUTPUT"
+            echo "Rebase succeeded cleanly."
+          else
+            git rebase --abort
+            echo "status=conflict" >> "$GITHUB_OUTPUT"
+            echo "Rebase had conflicts — will open an issue instead."
+          fi
+
+      - name: Push rebased branch
+        if: steps.rebase.outputs.status == 'success'
+        run: git push origin "${{ steps.rebase.outputs.branch }}"
+
+      - name: Open sync PR
+        if: steps.rebase.outputs.status == 'success'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ steps.rebase.outputs.branch }}
+          LOG: ${{ steps.detect.outputs.log }}
+          SHA: ${{ steps.detect.outputs.upstream_sha }}
+        run: |
+          cat > /tmp/pr-body.md << EOF
+          ## Upstream recipe changes detected
+
+          The following commit(s) landed in \`conda-forge/r-base-feedstock\` \`main\`
+          under \`recipe/\` since the last sync:
+
+          \`\`\`
+          $LOG
+          \`\`\`
+
+          The \`isolated\` branch has been rebased onto upstream \`main\` automatically.
+          This PR fast-forwards \`isolated\` to the result.
+
+          ### Review checklist before merging
+
+          - [ ] Do any new or changed upstream patches conflict with or supersede
+                \`0019-Disable-default-user-libraries.patch\`?
+          - [ ] Does \`recipe.yaml\` need updating (new R version, new dependencies,
+                changed selectors, new patches listed)?
+          - [ ] Does the build number need bumping?
+          - [ ] Do \`activate-r-base.sh\` / \`deactivate-r-base.sh\` still apply cleanly?
+
+          Upstream HEAD: \`$SHA\`
+
+          ---
+          *Opened automatically by the [sync-upstream](.github/workflows/sync-upstream.yml) workflow.*
+          EOF
+
+          gh pr create \
+            --base isolated \
+            --head "$BRANCH" \
+            --title "chore: sync with upstream main ($(date +%Y-%m-%d))" \
+            --body-file /tmp/pr-body.md
+
+      - name: Open issue on rebase conflict
+        if: steps.rebase.outputs.status == 'conflict'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LOG: ${{ steps.detect.outputs.log }}
+          SHA: ${{ steps.detect.outputs.upstream_sha }}
+        run: |
+          cat > /tmp/issue-body.md << EOF
+          ## Manual sync required — rebase conflict
+
+          The following commit(s) landed in \`conda-forge/r-base-feedstock\` \`main\`
+          under \`recipe/\` but automatic rebase of \`isolated\` **failed with conflicts**:
+
+          \`\`\`
+          $LOG
+          \`\`\`
+
+          ### Most likely cause
+
+          An upstream commit modified one of the same files changed by the isolation
+          commit (e.g. \`activate-r-base.sh\`, \`deactivate-r-base.sh\`, or a patch that
+          also touches \`etc/Renviron.in\`).
+
+          ### To resolve manually
+
+          \`\`\`bash
+          git fetch upstream
+          git checkout isolated
+          git rebase upstream/main
+          # Edit conflicting files, mark resolved:
+          git add <conflicted-files>
+          git rebase --continue
+          git push --force-with-lease origin isolated
+          \`\`\`
+
+          Upstream HEAD: \`$SHA\`
+
+          ---
+          *Opened automatically by the [sync-upstream](.github/workflows/sync-upstream.yml) workflow.*
+          EOF
+
+          gh issue create \
+            --title "Manual sync needed: upstream recipe conflict ($(date +%Y-%m-%d))" \
+            --body-file /tmp/issue-body.md
