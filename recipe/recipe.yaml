@@ -39,6 +39,8 @@ outputs:
         # plain C files parse it.  This runs in the same assembled
         # script as the main build call, so the export carries through.
         - if: osx
+          then: echo "DIAG MACOSX_DEPLOYMENT_TARGET=${MACOSX_DEPLOYMENT_TARGET:-UNSET} CONDA_BUILD_SYSROOT=${CONDA_BUILD_SYSROOT:-UNSET}"
+        - if: osx
           then: export CFLAGS="${CFLAGS:-} -fblocks"
         - if: not win
           then: bash $RECIPE_DIR/build-r-base.sh

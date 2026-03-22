@@ -56,6 +56,16 @@ jobs:
           setup-only: true
           rattler-build-version: latest
 
+      - name: Set macOS deployment target
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          if [ "${{ matrix.target.platform }}" = "osx-arm64" ]; then
+            echo "MACOSX_DEPLOYMENT_TARGET=11.0" >> "$GITHUB_ENV"
+          else
+            echo "MACOSX_DEPLOYMENT_TARGET=10.13" >> "$GITHUB_ENV"
+          fi
+
       - name: Build
         shell: bash
         run: |
