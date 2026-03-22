@@ -34,27 +34,12 @@ outputs:
       name: r-base
     build:
       script:
-        # rattler-build does not support multi-line then: | blocks, so each
-        # macOS env-fixup step is a separate single-line item.  All items are
-        # assembled into one bash script, so exports carry across items.
-        #
-        # clang_osx-64 defaults to darwin13.4.0 (macOS 10.9); Xcode 16's
-        # linker hard-errors on targets below 10.13.  Set the correct
-        # deployment target and scrub the stale -mmacosx-version-min that the
-        # conda clang activation script already injected into the flags.
-        - if: target_platform == "osx-64"
-          then: export MACOSX_DEPLOYMENT_TARGET="10.13"
-        - if: target_platform == "osx-arm64"
-          then: export MACOSX_DEPLOYMENT_TARGET="11.0"
-        # Remove stale deployment-target flags; clang wrapper will re-add the
-        # correct value from MACOSX_DEPLOYMENT_TARGET at each invocation.
-        # Also add -fblocks so ImageIO block types compile in plain C files.
+        # Newer Xcode SDKs include CGImageAnimation.h which defines
+        # CGImageSourceAnimationBlock as a block type; -fblocks lets
+        # plain C files parse it.  This runs in the same assembled
+        # script as the main build call, so the export carries through.
         - if: osx
-          then: export CFLAGS="$(echo "${CFLAGS:-}" | sed 's/-mmacosx-version-min=[^ ]*//g') -fblocks"
-        - if: osx
-          then: export CPPFLAGS="$(echo "${CPPFLAGS:-}" | sed 's/-mmacosx-version-min=[^ ]*//g')"
-        - if: osx
-          then: export LDFLAGS="$(echo "${LDFLAGS:-}" | sed 's/-mmacosx-version-min=[^ ]*//g')"
+          then: export CFLAGS="${CFLAGS:-} -fblocks"
         - if: not win
           then: bash $RECIPE_DIR/build-r-base.sh
         - if: win
@@ -84,8 +69,7 @@ outputs:
       build:
         - if: unix
           then: gnuconfig
-        - if: not osx
-          then: ${{ stdlib('c') }}
+        - ${{ stdlib('c') }}
         - ${{ compiler('c') }}
         - ${{ compiler('cxx') }}
         - ${{ compiler('fortran') }}
