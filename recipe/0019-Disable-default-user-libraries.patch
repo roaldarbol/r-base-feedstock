@@ -1,27 +1,27 @@
 From 8c85f70505694dd181ef47a47896007b150f94c3 Mon Sep 17 00:00:00 2001
 From: John Blischak <jdblischak@gmail.com>
 Date: Thu, 13 Dec 2018 14:12:32 -0500
-Subject: [PATCH] Disable default user libraries.
+Subject: [PATCH] Disable default user library.
 
 Prevents R from automatically adding the user's home directory library
-(~/R/<platform>-library/<version>) to .libPaths(), ensuring conda
-environments are fully isolated from system-installed R packages.
+to .libPaths() on startup, ensuring conda environments are fully
+isolated from system-installed R packages.
+
+In R >= 4.2 the platform-specific path expansion (%U) replaced the
+old @BUILD_AQUA_FALSE@/@BUILD_AQUA_TRUE@ conditional lines.
 ---
- etc/Renviron.in | 4 ++--
- 1 file changed, 2 insertions(+), 2 deletions(-)
+ etc/Renviron.in | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/etc/Renviron.in b/etc/Renviron.in
-index 49604e54c2..38efb63bb9 100644
+index 0000000..0000001 100644
 --- a/etc/Renviron.in
 +++ b/etc/Renviron.in
-@@ -39,8 +39,8 @@ TAR=${TAR-'@TAR@'}
- ## System and compiler types.
- R_SYSTEM_ABI='@R_SYSTEM_ABI@'
+@@ -45,7 +45,7 @@ R_STRIP_SHARED_LIB=${R_STRIP_SHARED_LIB-'@STRIP_SHARED_LIB@'}
+ R_STRIP_STATIC_LIB=${R_STRIP_STATIC_LIB-'@STRIP_STATIC_LIB@'}
 
--@BUILD_AQUA_FALSE@R_LIBS_USER=${R_LIBS_USER-'~/R/@R_PLATFORM@-library/@MAJ_MIN_VERSION@'}
--@BUILD_AQUA_TRUE@R_LIBS_USER=${R_LIBS_USER-'~/Library/R/@MAJ_MIN_VERSION@/library'}
-+#@BUILD_AQUA_FALSE@R_LIBS_USER=${R_LIBS_USER-'~/R/@R_PLATFORM@-library/@MAJ_MIN_VERSION@'}
-+#@BUILD_AQUA_TRUE@R_LIBS_USER=${R_LIBS_USER-'~/Library/R/@MAJ_MIN_VERSION@/library'}
+-R_LIBS_USER=${R_LIBS_USER:-'%U'}
++#R_LIBS_USER=${R_LIBS_USER:-'%U'}
+ R_LIBS_SITE=${R_LIBS_SITE:-'%S'}
 
  ### Local Variables: ***
- ### mode: sh ***
