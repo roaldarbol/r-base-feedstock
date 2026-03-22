@@ -51,8 +51,9 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install rattler-build
-        uses: prefix-dev/rattler-build-action@v0
+        uses: prefix-dev/rattler-build-action@v0.2.36
         with:
+          setup-only: true
           rattler-build-version: latest
 
       - name: Build
@@ -84,8 +85,9 @@ jobs:
           merge-multiple: true
 
       - name: Install rattler-build
-        uses: prefix-dev/rattler-build-action@v0
+        uses: prefix-dev/rattler-build-action@v0.2.36
         with:
+          setup-only: true
           rattler-build-version: latest
 
       - name: Upload packages (Trusted Publishers)
