@@ -37,7 +37,7 @@ jobs:
           rattler-build-version: latest
 
       - name: Build
-        run: rattler-build build --recipe recipe-noarch/ --output-dir output/
+        run: rattler-build build --recipe recipe/noarch/ --output-dir output/
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4

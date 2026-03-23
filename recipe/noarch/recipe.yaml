@@ -1,0 +1,17 @@
+context:
+  version: "1.0.0"
+
+package:
+  name: isolated-r-noarch-placeholder
+  version: ${{ version }}
+
+build:
+  noarch: generic
+  number: 0
+
+about:
+  homepage: https://github.com/roaldarbol/r-base-feedstock
+  license: MIT
+  description: >-
+    Placeholder package that ensures the noarch subdir exists in the
+    isolated-r channel so conda clients can resolve the repodata index.
