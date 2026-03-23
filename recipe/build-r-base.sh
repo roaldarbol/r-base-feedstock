@@ -394,16 +394,13 @@ Mingw_w64_makefiles() {
     rm -rf ${PREFIX}/lib/R/bin/${R_ARCH}/Rblas.dll
     rm -rf ${PREFIX}/lib/R/bin/${R_ARCH}/Rlapack.dll
 
-    # Diagnostics: find actual BLAS/LAPACK implementation DLLs
-    echo "=== DLLs in PREFIX/Library/bin/ matching blas/lapack/openblas ==="
-    ls -la "${PREFIX}/Library/bin/"*blas* "${PREFIX}/Library/bin/"*lapack* "${PREFIX}/Library/bin/"*openblas* 2>/dev/null || true
-    echo "=== libblas.dll export table ==="
-    x86_64-w64-mingw32-objdump -p "${PREFIX}/Library/bin/libblas.dll" 2>/dev/null | grep -i "DLL Name\|Export\|forward" | head -30 || true
-    echo "=== liblapack.dll export table ==="
-    x86_64-w64-mingw32-objdump -p "${PREFIX}/Library/bin/liblapack.dll" 2>/dev/null | grep -i "DLL Name\|Export\|forward" | head -30 || true
-
-    create-forwarder-dll ${PREFIX_WIN}\\Library\\bin\\libblas.dll ${PREFIX_WIN}\\lib\\R\\bin\\${R_ARCH}\\Rblas.dll --no-temp-dir
-    create-forwarder-dll ${PREFIX_WIN}\\Library\\bin\\liblapack.dll ${PREFIX_WIN}\\lib\\R\\bin\\${R_ARCH}\\Rlapack.dll --no-temp-dir
+    # libblas.dll and liblapack.dll are forwarder metapackage DLLs that
+    # forward all exports to openblas.dll. create-forwarder-dll cannot handle
+    # forwarder DLLs as input (it reads the forwarded target names as symbol
+    # names, producing malformed .def entries). Use openblas.dll directly —
+    # it contains all BLAS and LAPACK symbols.
+    create-forwarder-dll ${PREFIX_WIN}\\Library\\bin\\openblas.dll ${PREFIX_WIN}\\lib\\R\\bin\\${R_ARCH}\\Rblas.dll --no-temp-dir
+    create-forwarder-dll ${PREFIX_WIN}\\Library\\bin\\openblas.dll ${PREFIX_WIN}\\lib\\R\\bin\\${R_ARCH}\\Rlapack.dll --no-temp-dir
 
     return 0
 }
