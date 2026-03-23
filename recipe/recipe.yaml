@@ -287,10 +287,14 @@ outputs:
           - R -e "stopifnot(strtoi(substr(attr(OlsonNames(), 'Version'), 1, 4)) >= 2024)"
           # Verify isolation from user library
           - Rscript test-isolation.R
+          - Rscript test-isolation-setup.R
+          - Rscript test-isolation-teardown.R
         files:
           recipe:
             - test-svg.R
             - test-isolation.R
+            - test-isolation-setup.R
+            - test-isolation-teardown.R
 
   - package:
       name: cross-r-base
