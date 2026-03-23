@@ -27,7 +27,7 @@ source:
       - 0019-Disable-default-user-libraries.patch
 
 build:
-  number: 1
+  number: 2
 
 outputs:
   - package:
@@ -286,11 +286,15 @@ outputs:
           # Check that tzdata version is at least 2024
           - R -e "stopifnot(strtoi(substr(attr(OlsonNames(), 'Version'), 1, 4)) >= 2024)"
           # Verify isolation from user library
-          - Rscript test-isolation.R
+          - R -f test-isolation-setup.R
+          - R -f test-isolation.R
+          - R -f test-isolation-teardown.R
         files:
           recipe:
             - test-svg.R
+            - test-isolation-setup.R
             - test-isolation.R
+            - test-isolation-teardown.R
 
   - package:
       name: cross-r-base
