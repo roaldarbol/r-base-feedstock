@@ -216,6 +216,11 @@ outputs:
             - ${{ compiler('fortran') }}
             - ${{ pin_compatible('llvm-openmp', upper_bound=None) }}
         - curl
+        # Rblas.dll/Rlapack.dll forward to openblas.dll; must be present at runtime
+        - if: win
+          then:
+            - libblas * *openblas
+            - liblapack * *openblas
         - if: linux
           then:
             - libuuid
