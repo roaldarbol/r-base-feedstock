@@ -1,5 +1,3 @@
-blas_impl:
-  - openblas
 c_stdlib:
   - m2w64-sysroot
 c_stdlib_version:

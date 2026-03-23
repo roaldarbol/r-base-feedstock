@@ -181,8 +181,14 @@ outputs:
         - zlib
         - gsl
         - libtiff
-        - libblas
-        - liblapack
+        # MKL's DLL exports are chained forwarders that create-forwarder-dll
+        # cannot link against on Windows. Force OpenBLAS on Windows.
+        - if: win
+          then: libblas * *openblas
+          else: libblas
+        - if: win
+          then: liblapack * *openblas
+          else: liblapack
         - tzdata
         # sed path is recorded in R's shell wrapper
         - if: linux
