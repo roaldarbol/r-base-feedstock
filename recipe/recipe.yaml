@@ -86,6 +86,7 @@ outputs:
             - m2-make
             - m2-tar
             - m2-unzip
+            - m2-zip
             - m2-texinfo
             - m2-curl
             - m2-p7zip
