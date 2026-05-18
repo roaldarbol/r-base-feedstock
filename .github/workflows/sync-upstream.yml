@@ -1,9 +1,17 @@
-# Monitors conda-forge/r-base-feedstock main for recipe changes and
-# opens a PR (clean rebase) or an issue (conflicts) automatically.
+# Extracts version, sha256, and patches list from upstream
+# conda-forge/r-base-feedstock's recipe/meta.yaml and ports any change into
+# this fork's recipe/recipe.yaml. Opens a PR against `isolated` when the
+# upstream version differs from the fork's version.
 #
-# IMPORTANT: For the scheduled trigger to fire, "isolated" must be set
-# as the default branch of your fork (Settings → Branches → Default branch).
-# The workflow_dispatch trigger works from any branch.
+# Why this is a data sync, not a git rebase:
+# this fork replaces upstream's meta.yaml / Azure pipelines / .ci_support
+# with a rattler-build recipe.yaml + GitHub Actions. A `git rebase upstream/main`
+# would conflict on every upstream commit that touches the deleted files.
+#
+# IMPORTANT: For the scheduled trigger to fire, "isolated" must be the default
+# branch of the fork (Settings → Branches → Default branch). Also enable
+# Settings → Actions → General → "Allow GitHub Actions to create and approve
+# pull requests" so this workflow can open PRs with GITHUB_TOKEN.
 
 name: Sync with upstream
 
@@ -15,7 +23,6 @@ on:
 permissions:
   contents: write
   pull-requests: write
-  issues: write
 
 jobs:
   sync:
@@ -34,34 +41,92 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
 
-      - name: Fetch upstream
+      - name: Fetch upstream meta.yaml
         run: |
-          git remote add upstream https://github.com/conda-forge/r-base-feedstock.git
-          git fetch upstream main
+          curl -fsSL -o /tmp/upstream-meta.yaml \
+            https://raw.githubusercontent.com/conda-forge/r-base-feedstock/main/recipe/meta.yaml
 
-      - name: Detect upstream recipe changes
-        id: detect
+      - name: Extract upstream fields
+        id: upstream
         run: |
-          # Common ancestor between our isolated branch and upstream/main
-          BASE=$(git merge-base HEAD upstream/main)
+          UP_VERSION=$(grep -E '^\{% set version' /tmp/upstream-meta.yaml \
+            | sed -E 's/.*"([^"]+)".*/\1/')
+          UP_SHA=$(grep -E '^[[:space:]]+sha256:' /tmp/upstream-meta.yaml \
+            | head -n1 | awk '{print $2}')
+          UP_PATCHES=$(awk '
+            /^[[:space:]]+patches:/ { in_patches=1; next }
+            in_patches && /^[[:space:]]+- .*\.patch/ {
+              sub(/^[[:space:]]+- /, ""); sub(/[[:space:]]+#.*$/, ""); print; next
+            }
+            in_patches && (/^[[:space:]]*$/ || /^[[:space:]]*#/) { next }
+            in_patches { in_patches=0 }
+          ' /tmp/upstream-meta.yaml | sort -u)
 
-          # Count upstream commits since that ancestor that touch recipe/
-          COUNT=$(git log --oneline "$BASE..upstream/main" -- recipe/ | wc -l | tr -d ' ')
-          echo "count=$COUNT" >> "$GITHUB_OUTPUT"
+          echo "version=$UP_VERSION" >> "$GITHUB_OUTPUT"
+          echo "sha256=$UP_SHA" >> "$GITHUB_OUTPUT"
+          {
+            echo 'patches<<PEOF'
+            echo "$UP_PATCHES"
+            echo 'PEOF'
+          } >> "$GITHUB_OUTPUT"
 
-          if [ "$COUNT" -gt 0 ]; then
-            LOG=$(git log --oneline "$BASE..upstream/main" -- recipe/)
-            echo "upstream_sha=$(git rev-parse upstream/main)" >> "$GITHUB_OUTPUT"
-            # Multiline output
-            printf 'log<<LOGEOF\n%s\nLOGEOF\n' "$LOG" >> "$GITHUB_OUTPUT"
-            echo "Upstream has $COUNT new recipe commit(s):"
-            echo "$LOG"
-          else
-            echo "No upstream recipe changes since last sync. Nothing to do."
+          echo "Upstream: version=$UP_VERSION sha=$UP_SHA"
+          echo "Upstream patches:"
+          echo "$UP_PATCHES"
+
+      - name: Extract fork fields
+        id: fork
+        run: |
+          FK_VERSION=$(grep -E '^[[:space:]]+version:[[:space:]]*"' recipe/recipe.yaml \
+            | head -n1 | sed -E 's/.*"([^"]+)".*/\1/')
+          FK_SHA=$(grep -E '^[[:space:]]+sha256:' recipe/recipe.yaml \
+            | head -n1 | awk '{print $2}')
+          FK_PATCHES=$(awk '
+            /^[[:space:]]+patches:/ { in_patches=1; next }
+            in_patches && /^[[:space:]]+- / { sub(/^[[:space:]]+- /, ""); sub(/[[:space:]]+#.*$/, ""); print; next }
+            in_patches { in_patches=0 }
+          ' recipe/recipe.yaml | sort -u)
+
+          echo "version=$FK_VERSION" >> "$GITHUB_OUTPUT"
+          echo "sha256=$FK_SHA" >> "$GITHUB_OUTPUT"
+          {
+            echo 'patches<<PEOF'
+            echo "$FK_PATCHES"
+            echo 'PEOF'
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Fork: version=$FK_VERSION sha=$FK_SHA"
+
+      - name: Compare and decide
+        id: decide
+        env:
+          UP_VERSION: ${{ steps.upstream.outputs.version }}
+          FK_VERSION: ${{ steps.fork.outputs.version }}
+          UP_SHA: ${{ steps.upstream.outputs.sha256 }}
+          FK_SHA: ${{ steps.fork.outputs.sha256 }}
+          UP_PATCHES: ${{ steps.upstream.outputs.patches }}
+          FK_PATCHES: ${{ steps.fork.outputs.patches }}
+        run: |
+          if [ "$UP_VERSION" = "$FK_VERSION" ] && [ "$UP_SHA" = "$FK_SHA" ]; then
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+            echo "Already in sync with upstream R $UP_VERSION."
+            exit 0
           fi
 
+          echo "needed=true" >> "$GITHUB_OUTPUT"
+
+          # Informational: does the upstream patch list contain entries this
+          # fork's recipe.yaml doesn't list? We only flag (don't auto-apply)
+          # because patch *file content* may differ even when names match.
+          PATCH_DIFF=$(diff <(echo "$FK_PATCHES") <(echo "$UP_PATCHES") || true)
+          {
+            echo 'patch_diff<<DEOF'
+            echo "$PATCH_DIFF"
+            echo 'DEOF'
+          } >> "$GITHUB_OUTPUT"
+
       - name: Check for existing open sync PR
-        if: steps.detect.outputs.count != '0'
+        if: steps.decide.outputs.needed == 'true'
         id: existing
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -76,111 +141,80 @@ jobs:
             echo "Sync PR #$PR already open — skipping."
           fi
 
-      - name: Attempt rebase onto upstream/main
-        if: steps.detect.outputs.count != '0' && steps.existing.outputs.pr == ''
-        id: rebase
+      - name: Apply version bump to recipe.yaml
+        if: steps.decide.outputs.needed == 'true' && steps.existing.outputs.pr == ''
+        id: apply
+        env:
+          UP_VERSION: ${{ steps.upstream.outputs.version }}
+          UP_SHA: ${{ steps.upstream.outputs.sha256 }}
+          FK_VERSION: ${{ steps.fork.outputs.version }}
+          FK_SHA: ${{ steps.fork.outputs.sha256 }}
         run: |
-          BRANCH="sync/upstream-$(date +%Y%m%d)"
+          BRANCH="sync/upstream-${UP_VERSION}"
           echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
 
-          # Create branch from current isolated HEAD, then rebase onto upstream
           git checkout -b "$BRANCH"
-          if git rebase upstream/main; then
-            echo "status=success" >> "$GITHUB_OUTPUT"
-            echo "Rebase succeeded cleanly."
-          else
-            git rebase --abort
-            echo "status=conflict" >> "$GITHUB_OUTPUT"
-            echo "Rebase had conflicts — will open an issue instead."
-          fi
 
-      - name: Push rebased branch
-        if: steps.rebase.outputs.status == 'success'
-        run: git push origin "${{ steps.rebase.outputs.branch }}"
+          # Update quoted context.version (only line with version: "X.Y.Z")
+          sed -i -E "s|^([[:space:]]+version:[[:space:]]*\")${FK_VERSION}(\".*)$|\1${UP_VERSION}\2|" \
+            recipe/recipe.yaml
+          # Update the source sha256 (matched by old digest to avoid editing
+          # any unrelated sha256: line, should one appear later).
+          sed -i "s|sha256: ${FK_SHA}|sha256: ${UP_SHA}|" recipe/recipe.yaml
+          # Reset build.number to 0 on version bump (conda packaging convention).
+          # Anchored to 2-space indent so it only hits the top-level build.number.
+          sed -i -E 's|^(  number:[[:space:]]*)[0-9]+$|\10|' recipe/recipe.yaml
+
+          echo "--- recipe.yaml diff ---"
+          git --no-pager diff recipe/recipe.yaml
+
+          git add recipe/recipe.yaml
+          git commit -m "Sync with upstream: R ${UP_VERSION}"
+          git push origin "$BRANCH"
 
       - name: Open sync PR
-        if: steps.rebase.outputs.status == 'success'
+        if: steps.decide.outputs.needed == 'true' && steps.existing.outputs.pr == ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          BRANCH: ${{ steps.rebase.outputs.branch }}
-          LOG: ${{ steps.detect.outputs.log }}
-          SHA: ${{ steps.detect.outputs.upstream_sha }}
+          BRANCH: ${{ steps.apply.outputs.branch }}
+          UP_VERSION: ${{ steps.upstream.outputs.version }}
+          FK_VERSION: ${{ steps.fork.outputs.version }}
+          UP_SHA: ${{ steps.upstream.outputs.sha256 }}
+          PATCH_DIFF: ${{ steps.decide.outputs.patch_diff }}
         run: |
-          cat > /tmp/pr-body.md << EOF
-          ## Upstream recipe changes detected
-
-          The following commit(s) landed in \`conda-forge/r-base-feedstock\` \`main\`
-          under \`recipe/\` since the last sync:
-
-          \`\`\`
-          $LOG
-          \`\`\`
-
-          The \`isolated\` branch has been rebased onto upstream \`main\` automatically.
-          This PR fast-forwards \`isolated\` to the result.
-
-          ### Review checklist before merging
-
-          - [ ] Do any new or changed upstream patches conflict with or supersede
-                \`0019-Disable-default-user-libraries.patch\`?
-          - [ ] Does \`recipe.yaml\` need updating (new R version, new dependencies,
-                changed selectors, new patches listed)?
-          - [ ] Does the build number need bumping?
-          - [ ] Do \`activate-r-base.sh\` / \`deactivate-r-base.sh\` still apply cleanly?
-
-          Upstream HEAD: \`$SHA\`
-
-          ---
-          *Opened automatically by the [sync-upstream](.github/workflows/sync-upstream.yml) workflow.*
-          EOF
+          BODY=$(mktemp)
+          {
+            echo "## Upstream R version bump detected"
+            echo
+            echo "Upstream \`conda-forge/r-base-feedstock\` is on **R ${UP_VERSION}** (fork is on ${FK_VERSION})."
+            echo
+            echo "This PR ports the version + sha256 into \`recipe/recipe.yaml\` and resets the build number to 0."
+            echo
+            if [ -n "$PATCH_DIFF" ]; then
+              echo "### Patch list differs from upstream"
+              echo
+              echo "The patch filenames listed in \`recipe.yaml\` do not match upstream \`meta.yaml\`."
+              echo "Review whether patches need to be added, removed, or refreshed (\`<\` = fork, \`>\` = upstream):"
+              echo
+              echo '```diff'
+              echo "${PATCH_DIFF}"
+              echo '```'
+              echo
+            fi
+            echo "### Review checklist"
+            echo
+            echo "- [ ] Existing patches still apply against R ${UP_VERSION}."
+            echo "- [ ] \`0019-Disable-default-user-libraries.patch\` (fork-only) still applies."
+            echo "- [ ] Build succeeds on linux / osx / win."
+            echo
+            echo "Upstream sha256: \`${UP_SHA}\`"
+            echo
+            echo "---"
+            echo "*Opened automatically by the [sync-upstream](.github/workflows/sync-upstream.yml) workflow.*"
+          } > "$BODY"
 
           gh pr create \
             --base isolated \
             --head "$BRANCH" \
-            --title "chore: sync with upstream main ($(date +%Y-%m-%d))" \
-            --body-file /tmp/pr-body.md
-
-      - name: Open issue on rebase conflict
-        if: steps.rebase.outputs.status == 'conflict'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          LOG: ${{ steps.detect.outputs.log }}
-          SHA: ${{ steps.detect.outputs.upstream_sha }}
-        run: |
-          cat > /tmp/issue-body.md << EOF
-          ## Manual sync required — rebase conflict
-
-          The following commit(s) landed in \`conda-forge/r-base-feedstock\` \`main\`
-          under \`recipe/\` but automatic rebase of \`isolated\` **failed with conflicts**:
-
-          \`\`\`
-          $LOG
-          \`\`\`
-
-          ### Most likely cause
-
-          An upstream commit modified one of the same files changed by the isolation
-          commit (e.g. \`activate-r-base.sh\`, \`deactivate-r-base.sh\`, or a patch that
-          also touches \`etc/Renviron.in\`).
-
-          ### To resolve manually
-
-          \`\`\`bash
-          git fetch upstream
-          git checkout isolated
-          git rebase upstream/main
-          # Edit conflicting files, mark resolved:
-          git add <conflicted-files>
-          git rebase --continue
-          git push --force-with-lease origin isolated
-          \`\`\`
-
-          Upstream HEAD: \`$SHA\`
-
-          ---
-          *Opened automatically by the [sync-upstream](.github/workflows/sync-upstream.yml) workflow.*
-          EOF
-
-          gh issue create \
-            --title "Manual sync needed: upstream recipe conflict ($(date +%Y-%m-%d))" \
-            --body-file /tmp/issue-body.md
+            --title "chore: sync with upstream R ${UP_VERSION}" \
+            --body-file "$BODY"
