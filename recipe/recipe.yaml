@@ -123,6 +123,7 @@ outputs:
             - tktable
             - expat
             - pango
+            - harfbuzz
             - freetype
             - xorg-xproto
             - xorg-kbproto
@@ -173,6 +174,9 @@ outputs:
           then:
             - expat
             - pango
+            # pango.pc requires harfbuzz.pc, which is no longer pulled in
+            # transitively since conda-forge split out libharfbuzz
+            - harfbuzz
         # freetype needed for pkg-config
         - freetype
         - icu
