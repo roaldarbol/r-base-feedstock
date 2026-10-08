@@ -27,7 +27,7 @@ source:
       - 0019-Disable-default-user-libraries.patch
 
 build:
-  number: 0
+  number: 1
 
 outputs:
   - package:
